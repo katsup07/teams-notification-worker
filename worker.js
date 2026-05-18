@@ -1,8 +1,8 @@
-import hachuNaviPrompt from './1.HachuNavi案件判定プロンプト.md';
-import lijBasicInfo from './LIJ基本情報.md';
-import techCriteria from './技術市場価値評価基準.md';
-import mismatchCheck from './判定ズレチェック.md';
-import entryTemplate from './エントリー文面.md';
+import hachuNaviPrompt from './prompt-assets/hachunavi-judgement-prompt.md';
+import lijBasicInfo from './prompt-assets/lij-basic-info.md';
+import techCriteria from './prompt-assets/tech-market-value-criteria.md';
+import mismatchCheck from './prompt-assets/mismatch-check.md';
+import entryTemplate from './prompt-assets/entry-template.md';
 
 export default {
   async fetch(request, env) {
