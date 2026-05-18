@@ -1,0 +1,32 @@
+{
+  "name": "teams-notification-worker",
+  "main": "worker.js",
+   "compatibility_date": "2026-05-14",
+
+  // Keeps variables/secrets set in the Cloudflare online console
+  // instead of wiping them on deploy.
+  "keep_vars": true,
+  "observability": {
+      "enabled": false,
+      "head_sampling_rate": 1,
+      "logs": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "persist": true,
+        "invocation_logs": true
+      },
+      "traces": {
+        "enabled": false,
+        "persist": true,
+        "head_sampling_rate": 1
+      }
+    },
+
+    "rules": [
+  {
+    "type": "Text",
+    "globs": ["**/*.md", "**/*文面md"],
+    "fallthrough": true
+  }
+]
+}
