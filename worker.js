@@ -1,3 +1,9 @@
+import hachuNaviPrompt from './1.HachuNavi案件判定プロンプト.md';
+import lijBasicInfo from './LIJ基本情報.md';
+import techCriteria from './技術市場価値評価基準.md';
+import mismatchCheck from './判定ズレチェック.md';
+import entryTemplate from './エントリー文面md';
+
 export default {
   async fetch(request, env) {
     if (request.method !== 'POST') {
@@ -168,39 +174,19 @@ async function evaluateJobWithOpenAI(job, env) {
   const projectTitle = safeText(job.projectTitle);
   const jobUrl = safeText(job.jobUrl);
   const sheetName = safeText(job.sheetName);
-  const description = safeText(job.description);
-  const budget = safeText(job.budget);
-  const deadline = safeText(job.deadline);
-
-  const prompt = `
-あなたはLIJ株式会社の案件評価アシスタントです。
-以下の案件について、受けるべきかどうかを判定してください。
-
-判定ルール:
-- 予算が低すぎる案件は低評価
-- 納期が短すぎる案件は注意
-- 要件が曖昧な案件は注意
-- SaaS案件は継続性がありそうなら高評価
-- 技術的に不明点が多い場合は「要確認」
-- 最終判断は人間が行うため、あなたは推薦を出すだけ
-
-必ず次のJSONだけを返してください。
-
-{
-  "decision": "受けるべき" | "要確認" | "見送り推奨",
-  "score": 0,
-  "summary": "短い要約",
-  "reasons": ["理由1", "理由2", "理由3"]
-}
-
-案件情報:
-案件名: ${projectTitle}
-種別: ${sheetName}
-URL: ${jobUrl}
-説明: ${description}
-予算: ${budget}
-納期: ${deadline}
-`;
+  const prompt = buildOpenAIPrompt({
+    projectTitle,
+    jobUrl,
+    sheetName,
+    scrapedAt: firstText(job, ['scrapedAt', 'scraped_at']),
+    status: firstText(job, ['status']),
+    note: firstText(job, ['note']),
+    entryConditions: firstText(job, ['entryConditions', 'エントリー条件']),
+    inquiryContent: firstText(job, ['inquiryContent', 'お問い合わせ時の内容', 'description']),
+    hearingContent: firstText(job, ['hearingContent', '発注ナビ担当者のヒアリング内容']),
+    budget: firstText(job, ['budget', '予算']),
+    deadline: firstText(job, ['deadline', '納期'])
+  });
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -254,6 +240,8 @@ console.log('OpenAI status:', response.status);
   console.log('OpenAI response:', JSON.stringify(data).slice(0, 2000));
 
   if (!response.ok) {
+    const text = extractOpenAIOutputText(data);
+
     return {
       decision: 'AI評価エラー',
       score: null,
@@ -277,6 +265,74 @@ console.log('OpenAI status:', response.status);
       reasons: [text.slice(0, 500)]
     };
   }
+}
+
+function buildOpenAIPrompt(job) {
+  return `
+${hachuNaviPrompt}
+
+---
+## LIJ基本情報
+${lijBasicInfo}
+
+---
+## 技術市場価値評価基準
+${techCriteria}
+
+---
+## 判定ズレチェック
+${mismatchCheck}
+
+---
+## エントリー文面
+${entryTemplate}
+
+---
+## Worker出力制約
+
+このCloudflare WorkerではTeams通知用に構造化JSONだけを受け取る。
+上記プロンプト内にエントリー文面ドラフトの指示があっても、このAPI応答では本文ドラフトを出力しない。
+
+判定ランクを以下のJSON形式に変換して返すこと。
+- SまたはA: decision = "受けるべき"
+- B: decision = "要確認"
+- C: decision = "見送り推奨"
+- scoreは0から100。S=90以上、A=75以上、B=45から74、C=44以下を目安にする
+
+必ず次のJSONだけを返すこと。Markdownや説明文をJSONの外に出さないこと。
+
+{
+  "decision": "受けるべき" | "要確認" | "見送り推奨",
+  "score": 0,
+  "summary": "短い要約",
+  "reasons": ["理由1", "理由2", "理由3"]
+}
+
+---
+## 発注ナビ案件情報
+
+job_url: ${job.jobUrl}
+project_title: ${job.projectTitle}
+sheetName: ${job.sheetName}
+scraped_at: ${job.scrapedAt}
+status: ${job.status}
+note: ${job.note}
+
+エントリー条件:
+${job.entryConditions || '-'}
+
+お問い合わせ時の内容:
+${job.inquiryContent || '-'}
+
+発注ナビ担当者のヒアリング内容:
+${job.hearingContent || '-'}
+
+予算:
+${job.budget || '-'}
+
+納期:
+${job.deadline || '-'}
+`;
 }
 
 
@@ -481,6 +537,18 @@ function safeText(value) {
   }
 
   return String(value);
+}
+
+function firstText(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+
+    if (value !== null && value !== undefined && String(value).trim() !== '') {
+      return String(value);
+    }
+  }
+
+  return '';
 }
 
 function truncateText(value, maxLength) {
