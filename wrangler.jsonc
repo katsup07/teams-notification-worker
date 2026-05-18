@@ -25,7 +25,7 @@
     "rules": [
   {
     "type": "Text",
-    "globs": ["prompt-assets/*.md"],
+    "globs": ["prompt-assets/*.txt"],
     "fallthrough": true
   }
 ]

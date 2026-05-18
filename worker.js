@@ -1,8 +1,8 @@
-import hachuNaviPrompt from './prompt-assets/hachunavi-judgement-prompt.md';
-import lijBasicInfo from './prompt-assets/lij-basic-info.md';
-import techCriteria from './prompt-assets/tech-market-value-criteria.md';
-import mismatchCheck from './prompt-assets/mismatch-check.md';
-import entryTemplate from './prompt-assets/entry-template.md';
+import hachuNaviPrompt from './prompt-assets/hachunavi-judgement-prompt.txt';
+import lijBasicInfo from './prompt-assets/lij-basic-info.txt';
+import techCriteria from './prompt-assets/tech-market-value-criteria.txt';
+import mismatchCheck from './prompt-assets/mismatch-check.txt';
+import entryTemplate from './prompt-assets/entry-template.txt';
 
 export default {
   async fetch(request, env) {
