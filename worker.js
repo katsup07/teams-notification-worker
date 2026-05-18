@@ -94,6 +94,7 @@ function buildNewJobTeamsPayload(job, aiEvaluation) {
   const sheetUrl = safeText(job.sheetUrl);
 
   const jobType = sheetName === 'saas-projects' ? 'SaaS案件' : '通常案件';
+  const rankWithScore = formatRankWithScore(aiEvaluation);
 
   return {
     type: 'message',
@@ -129,10 +130,8 @@ function buildNewJobTeamsPayload(job, aiEvaluation) {
                   value: aiEvaluation?.decision || '-'
                 },
                 {
-                  title: 'AIスコア',
-                  value: aiEvaluation?.score === null || aiEvaluation?.score === undefined
-                    ? '-'
-                    : String(aiEvaluation.score)
+                  title: 'ランク',
+                  value: rankWithScore
                 },
                 {
                   title: 'AI要約',
@@ -165,6 +164,7 @@ async function evaluateJobWithOpenAI(job, env) {
   if (!env.OPENAI_API_KEY) {
     return {
       decision: '未評価',
+      rank: null,
       score: null,
       summary: 'OPENAI_API_KEY がCloudflareに設定されていません。',
       reasons: []
@@ -211,6 +211,10 @@ async function evaluateJobWithOpenAI(job, env) {
                 type: 'string',
                 enum: ['受けるべき', '要確認', '見送り推奨']
               },
+              rank: {
+                type: 'string',
+                enum: ['S', 'A', 'B', 'C']
+              },
               score: {
                 type: 'number',
                 minimum: 0,
@@ -226,7 +230,7 @@ async function evaluateJobWithOpenAI(job, env) {
                 }
               }
             },
-            required: ['decision', 'score', 'summary', 'reasons']
+            required: ['decision', 'rank', 'score', 'summary', 'reasons']
           }
         }
       }
@@ -244,6 +248,7 @@ console.log('OpenAI status:', response.status);
 
     return {
       decision: 'AI評価エラー',
+      rank: null,
       score: null,
       summary: 'OpenAIの返答をJSONとして解析できませんでした。',
       reasons: [
@@ -260,6 +265,7 @@ console.log('OpenAI status:', response.status);
   } catch (error) {
     return {
       decision: 'AI評価エラー',
+      rank: null,
       score: null,
       summary: 'OpenAIの返答をJSONとして解析できませんでした。',
       reasons: [text.slice(0, 500)]
@@ -294,6 +300,7 @@ ${entryTemplate}
 上記プロンプト内にエントリー文面ドラフトの指示があっても、このAPI応答では本文ドラフトを出力しない。
 
 判定ランクを以下のJSON形式に変換して返すこと。
+- rankには必ず元の判定ランク（"S"、"A"、"B"、"C" のいずれか）を入れる
 - SまたはA: decision = "受けるべき"
 - B: decision = "要確認"
 - C: decision = "見送り推奨"
@@ -303,6 +310,7 @@ ${entryTemplate}
 
 {
   "decision": "受けるべき" | "要確認" | "見送り推奨",
+  "rank": "S" | "A" | "B" | "C",
   "score": 0,
   "summary": "短い要約",
   "reasons": ["理由1", "理由2", "理由3"]
@@ -549,6 +557,25 @@ function firstText(source, keys) {
   }
 
   return '';
+}
+
+function formatRankWithScore(aiEvaluation) {
+  const rank = safeText(aiEvaluation?.rank);
+  const score = aiEvaluation?.score;
+
+  if (!rank && (score === null || score === undefined)) {
+    return '-';
+  }
+
+  if (!rank) {
+    return `${score}点`;
+  }
+
+  if (score === null || score === undefined) {
+    return rank;
+  }
+
+  return `${rank}（${score}点）`;
 }
 
 function truncateText(value, maxLength) {
