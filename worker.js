@@ -2,7 +2,7 @@ import hachuNaviPrompt from './1.HachuNavi案件判定プロンプト.md';
 import lijBasicInfo from './LIJ基本情報.md';
 import techCriteria from './技術市場価値評価基準.md';
 import mismatchCheck from './判定ズレチェック.md';
-import entryTemplate from './エントリー文面md';
+import entryTemplate from './エントリー文面.md';
 
 export default {
   async fetch(request, env) {
