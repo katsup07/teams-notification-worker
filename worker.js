@@ -506,7 +506,7 @@ function buildSheetUpdatedTeamsPayload(payload) {
               type: 'FactSet',
               facts: [
                 {
-                  title: '通常案件',
+                  title: '開発・制作案件',
                   value: String(normalRowCount)
                 },
                 {
