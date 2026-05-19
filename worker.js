@@ -4,80 +4,50 @@ import techCriteria from './prompt-assets/tech-market-value-criteria.txt';
 import mismatchCheck from './prompt-assets/mismatch-check.txt';
 import entryTemplate from './prompt-assets/entry-template.txt';
 
+const OPENAI_EVALUATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    decision: {
+      type: 'string',
+      enum: ['受けるべき', '要確認', '見送り推奨']
+    },
+    rank: {
+      type: 'string',
+      enum: ['S', 'A', 'B', 'C']
+    },
+    score: {
+      type: 'number',
+      minimum: 0,
+      maximum: 100
+    },
+    summary: {
+      type: 'string'
+    },
+    reasons: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    }
+  },
+  required: ['decision', 'rank', 'score', 'summary', 'reasons']
+};
+
+// Main Function
 export default {
   async fetch(request, env) {
-    if (request.method !== 'POST') {
-      return jsonResponse({
-        ok: false,
-        error: 'Method not allowed'
-      }, 405);
-    }
+    const validationError = validateRequest(request, env);
+    if (validationError) return validationError;
 
-    const apiKey = String(request.headers.get('x-api-key') || '').trim();
-    const expectedApiKey = String(env.APPS_SCRIPT_API_KEY || '').trim();
+    const { payload, errorResponse } = await parseJsonRequest(request);
+    if (errorResponse) return errorResponse;
 
-    if (!apiKey || apiKey !== expectedApiKey) {
-      return jsonResponse({
-        ok: false,
-        error: 'Unauthorized',
-        hasReceivedApiKey: Boolean(apiKey),
-        hasExpectedApiKey: Boolean(expectedApiKey),
-        receivedApiKeyLength: apiKey.length,
-        expectedApiKeyLength: expectedApiKey.length
-      }, 401);
-    }
+    const teamsPayloadResult = await buildTeamsPayloadForEvent(payload, env);
+    if (teamsPayloadResult.errorResponse) return teamsPayloadResult.errorResponse;
 
-    if (!env.TEAMS_WEBHOOK_URL) {
-      return jsonResponse({
-        ok: false,
-        error: 'TEAMS_WEBHOOK_URL is not set in Cloudflare Worker variables'
-      }, 500);
-    }
-
-    let payload;
-
-    try {
-      payload = await request.json();
-    } catch (error) {
-      return jsonResponse({
-        ok: false,
-        error: 'Invalid JSON'
-      }, 400);
-    }
-
-    let teamsPayload;
-
-if (payload.eventType === 'newJob') {
-  const aiEvaluation = await evaluateJobWithOpenAI(payload, env);
-  teamsPayload = buildNewJobTeamsPayload(payload, aiEvaluation);
-} else if (payload.eventType === 'sheetUpdated') {
-  teamsPayload = buildSheetUpdatedTeamsPayload(payload);
-} else {
-  return jsonResponse({
-    ok: false,
-    error: 'Unsupported eventType',
-    eventType: payload.eventType || null
-  }, 400);
-}
-
-    const teamsResponse = await fetch(env.TEAMS_WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify(teamsPayload)
-    });
-
-    const teamsText = await teamsResponse.text();
-
-    if (!teamsResponse.ok) {
-      return jsonResponse({
-        ok: false,
-        error: 'Teams webhook failed',
-        status: teamsResponse.status,
-        body: teamsText
-      }, 502);
-    }
+    const teamsError = await postToTeams(env.TEAMS_WEBHOOK_URL, teamsPayloadResult.payload);
+    if (teamsError) return teamsError;
 
     return jsonResponse({
       ok: true,
@@ -86,7 +56,105 @@ if (payload.eventType === 'newJob') {
   }
 };
 
-// Simple payload builder
+function validateRequest(request, env) {
+  if (request.method !== 'POST') {
+    return jsonResponse({
+      ok: false,
+      error: 'Method not allowed'
+    }, 405);
+  }
+
+  const apiKey = String(request.headers.get('x-api-key') || '').trim();
+  const expectedApiKey = String(env.APPS_SCRIPT_API_KEY || '').trim();
+
+  if (!apiKey || apiKey !== expectedApiKey) {
+    return jsonResponse({
+      ok: false,
+      error: 'Unauthorized',
+      hasReceivedApiKey: Boolean(apiKey),
+      hasExpectedApiKey: Boolean(expectedApiKey),
+      receivedApiKeyLength: apiKey.length,
+      expectedApiKeyLength: expectedApiKey.length
+    }, 401);
+  }
+
+  if (!env.TEAMS_WEBHOOK_URL) {
+    return jsonResponse({
+      ok: false,
+      error: 'TEAMS_WEBHOOK_URL is not set in Cloudflare Worker variables'
+    }, 500);
+  }
+
+  return null;
+}
+
+async function parseJsonRequest(request) {
+  try {
+    return {
+      payload: await request.json(),
+      errorResponse: null
+    };
+  } catch (error) {
+    return {
+      payload: null,
+      errorResponse: jsonResponse({
+        ok: false,
+        error: 'Invalid JSON'
+      }, 400)
+    };
+  }
+}
+
+async function buildTeamsPayloadForEvent(payload, env) {
+  if (payload.eventType === 'newJob') {
+    const aiEvaluation = await evaluateJobWithOpenAI(payload, env);
+
+    return {
+      payload: buildNewJobTeamsPayload(payload, aiEvaluation),
+      errorResponse: null
+    };
+  }
+
+  if (payload.eventType === 'sheetUpdated') {
+    return {
+      payload: buildSheetUpdatedTeamsPayload(payload),
+      errorResponse: null
+    };
+  }
+
+  return {
+    payload: null,
+    errorResponse: jsonResponse({
+      ok: false,
+      error: 'Unsupported eventType',
+      eventType: payload.eventType || null
+    }, 400)
+  };
+}
+
+async function postToTeams(webhookUrl, payload) {
+  const teamsResponse = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const teamsText = await teamsResponse.text();
+
+  if (teamsResponse.ok) {
+    return null;
+  }
+
+  return jsonResponse({
+    ok: false,
+    error: 'Teams webhook failed',
+    status: teamsResponse.status,
+    body: teamsText
+  }, 502);
+}
+
 function buildNewJobTeamsPayload(job, aiEvaluation) {
   const projectTitle = safeText(job.projectTitle) || 'タイトル未取得';
   const sheetName = safeText(job.sheetName);
@@ -96,88 +164,60 @@ function buildNewJobTeamsPayload(job, aiEvaluation) {
   const jobType = sheetName === 'saas-projects' ? 'SaaS案件' : '開発・制作案件';
   const rankWithScore = formatRankWithScore(aiEvaluation);
 
-  return {
-    type: 'message',
-    attachments: [
-      {
-        contentType: 'application/vnd.microsoft.card.adaptive',
-        contentUrl: null,
-        content: {
-          '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json',
-          type: 'AdaptiveCard',
-          version: '1.4',
-          body: [
-            {
-              type: 'TextBlock',
-              text: '新しい案件が登録されました',
-              weight: 'Bolder',
-              size: 'Medium',
-              wrap: true
-            },
-            {
-              type: 'FactSet',
-              facts: [
-                {
-                  title: '種別',
-                  value: jobType
-                },
-                {
-                  title: '案件名',
-                  value: projectTitle
-                },
-                {
-                  title: 'AI判定',
-                  value: aiEvaluation?.decision || '-'
-                },
-                {
-                  title: 'ランク',
-                  value: rankWithScore
-                },
-                {
-                  title: 'AI要約',
-                  value: aiEvaluation?.summary || '-'
-                },
-                {
-                  title: '主な理由',
-                  value: Array.isArray(aiEvaluation?.reasons)
-                    ? aiEvaluation.reasons.join('\n')
-                    : '-'
-                },
-                {
-                  title: '案件URL',
-                  value: jobUrl || '-'
-                },
-                {
-                  title: 'Sheet',
-                  value: sheetUrl || '-'
-                }
-              ]
-            }
-          ]
-        }
-      }
-    ]
-  };
+  return buildAdaptiveCardMessage([
+    headingBlock('新しい案件が登録されました'),
+    factSet([
+      fact('種別', jobType),
+      fact('案件名', projectTitle),
+      fact('AI判定', aiEvaluation?.decision || '-'),
+      fact('ランク', rankWithScore),
+      fact('AI要約', aiEvaluation?.summary || '-'),
+      fact('主な理由', formatReasons(aiEvaluation?.reasons)),
+      fact('案件URL', jobUrl || '-'),
+      fact('Sheet', sheetUrl || '-')
+    ])
+  ]);
 }
 
 async function evaluateJobWithOpenAI(job, env) {
   if (!env.OPENAI_API_KEY) {
-    return {
-      decision: '未評価',
-      rank: null,
-      score: null,
-      summary: 'OPENAI_API_KEY がCloudflareに設定されていません。',
-      reasons: []
-    };
+    return missingOpenAIKeyEvaluation();
   }
 
-  const projectTitle = safeText(job.projectTitle);
-  const jobUrl = safeText(job.jobUrl);
-  const sheetName = safeText(job.sheetName);
-  const prompt = buildOpenAIPrompt({
-    projectTitle,
-    jobUrl,
-    sheetName,
+  const prompt = buildOpenAIPrompt(normalizeJobForEvaluation(job));
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(buildOpenAIRequestBody(prompt))
+  });
+
+  console.log('OpenAI status:', response.status);
+
+  const data = await response.json();
+  console.log('OpenAI response:', JSON.stringify(data).slice(0, 2000));
+
+  return parseOpenAIEvaluationResponse(response, data);
+}
+
+function missingOpenAIKeyEvaluation() {
+  return {
+    decision: '未評価',
+    rank: null,
+    score: null,
+    summary: 'OPENAI_API_KEY がCloudflareに設定されていません。',
+    reasons: []
+  };
+}
+
+function normalizeJobForEvaluation(job) {
+  return {
+    projectTitle: safeText(job.projectTitle),
+    jobUrl: safeText(job.jobUrl),
+    sheetName: safeText(job.sheetName),
     scrapedAt: firstText(job, ['scrapedAt', 'scraped_at']),
     status: firstText(job, ['status']),
     note: firstText(job, ['note']),
@@ -186,63 +226,26 @@ async function evaluateJobWithOpenAI(job, env) {
     hearingContent: firstText(job, ['hearingContent', '発注ナビ担当者のヒアリング内容']),
     budget: firstText(job, ['budget', '予算']),
     deadline: firstText(job, ['deadline', '納期'])
-  });
+  };
+}
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'gpt-5.4-mini',
-      input: prompt,
-      temperature: 0.2,
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'job_evaluation',
-          strict: true,
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              decision: {
-                type: 'string',
-                enum: ['受けるべき', '要確認', '見送り推奨']
-              },
-              rank: {
-                type: 'string',
-                enum: ['S', 'A', 'B', 'C']
-              },
-              score: {
-                type: 'number',
-                minimum: 0,
-                maximum: 100
-              },
-              summary: {
-                type: 'string'
-              },
-              reasons: {
-                type: 'array',
-                items: {
-                  type: 'string'
-                }
-              }
-            },
-            required: ['decision', 'rank', 'score', 'summary', 'reasons']
-          }
-        }
+function buildOpenAIRequestBody(prompt) {
+  return {
+    model: 'gpt-5.4-mini',
+    input: prompt,
+    temperature: 0.2,
+    text: {
+      format: {
+        type: 'json_schema',
+        name: 'job_evaluation',
+        strict: true,
+        schema: OPENAI_EVALUATION_SCHEMA
       }
-})
-  });
+    }
+  };
+}
 
-console.log('OpenAI status:', response.status);
-
-
-  const data = await response.json();
-  console.log('OpenAI response:', JSON.stringify(data).slice(0, 2000));
-
+function parseOpenAIEvaluationResponse(response, data) {
   if (!response.ok) {
     const text = extractOpenAIOutputText(data);
 
@@ -372,6 +375,18 @@ function buildSheetUpdatedTeamsPayload(payload) {
   const saasRowCount = Number(payload.saasRowCount || 0);
   const totalRowCount = normalRowCount + saasRowCount;
 
+  return buildAdaptiveCardMessage([
+    headingBlock('新しい案件データがGoogleスプレッドシートに登録されました。'),
+    factSet([
+      fact('開発・制作案件', String(normalRowCount)),
+      fact('SaaS案件', String(saasRowCount)),
+      fact('合計', String(totalRowCount)),
+      fact('Sheet', safeText(payload.sheetUrl) || '-')
+    ])
+  ]);
+}
+
+function buildAdaptiveCardMessage(body) {
   return {
     type: 'message',
     attachments: [
@@ -382,39 +397,34 @@ function buildSheetUpdatedTeamsPayload(payload) {
           '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json',
           type: 'AdaptiveCard',
           version: '1.4',
-          body: [
-            {
-              type: 'TextBlock',
-              text: '新しい案件データがGoogleスプレッドシートに登録されました。',
-              weight: 'Bolder',
-              size: 'Medium',
-              wrap: true
-            },
-            {
-              type: 'FactSet',
-              facts: [
-                {
-                  title: '開発・制作案件',
-                  value: String(normalRowCount)
-                },
-                {
-                  title: 'SaaS案件',
-                  value: String(saasRowCount)
-                },
-                {
-                  title: '合計',
-                  value: String(totalRowCount)
-                },
-                {
-                  title: 'Sheet',
-                  value: safeText(payload.sheetUrl) || '-'
-                }
-              ]
-            }
-          ]
+          body
         }
       }
     ]
+  };
+}
+
+function headingBlock(text) {
+  return {
+    type: 'TextBlock',
+    text,
+    weight: 'Bolder',
+    size: 'Medium',
+    wrap: true
+  };
+}
+
+function factSet(facts) {
+  return {
+    type: 'FactSet',
+    facts
+  };
+}
+
+function fact(title, value) {
+  return {
+    title,
+    value
   };
 }
 
@@ -466,12 +476,6 @@ function formatRankWithScore(aiEvaluation) {
   return `${rank}（${score}点）`;
 }
 
-function truncateText(value, maxLength) {
-  const text = safeText(value);
-
-  if (text.length <= maxLength) {
-    return text;
-  }
-
-  return text.substring(0, maxLength) + '...';
+function formatReasons(reasons) {
+  return Array.isArray(reasons) ? reasons.join('\n') : '-';
 }
