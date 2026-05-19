@@ -93,7 +93,7 @@ function buildNewJobTeamsPayload(job, aiEvaluation) {
   const jobUrl = safeText(job.jobUrl);
   const sheetUrl = safeText(job.sheetUrl);
 
-  const jobType = sheetName === 'saas-projects' ? 'SaaS案件' : '通常案件';
+  const jobType = sheetName === 'saas-projects' ? 'SaaS案件' : '開発・制作案件';
   const rankWithScore = formatRankWithScore(aiEvaluation);
 
   return {
@@ -342,118 +342,6 @@ ${job.budget || '-'}
 ${job.deadline || '-'}
 `;
 }
-
-
-// *** Includes Entry Condition, InquiryContent, and Hearing Content
-// function buildNewJobTeamsPayload(job) {
-//   const projectTitle = safeText(job.projectTitle) || 'タイトル未取得';
-//   const sheetName = safeText(job.sheetName);
-//   const jobUrl = safeText(job.jobUrl);
-//   const sheetUrl = safeText(job.sheetUrl);
-
-//   const entryConditions = truncateText(safeText(job.entryConditions), 900);
-//   const inquiryContent = truncateText(safeText(job.inquiryContent), 900);
-//   const hearingContent = truncateText(safeText(job.hearingContent), 900);
-
-//   const status = safeText(job.status) || '-';
-//   const note = safeText(job.note);
-
-//   const jobType = sheetName === 'saas-projects' ? 'SaaS案件' : '通常案件';
-
-//   const facts = [
-//     {
-//       title: '種別',
-//       value: jobType
-//     },
-//     {
-//       title: '案件名',
-//       value: projectTitle
-//     },
-//     {
-//       title: 'Status',
-//       value: status
-//     },
-//     {
-//       title: '案件URL',
-//       value: jobUrl || '-'
-//     },
-//     {
-//       title: 'Sheet',
-//       value: sheetUrl || '-'
-//     }
-//   ];
-
-//   if (note) {
-//     facts.push({
-//       title: 'Note',
-//       value: note
-//     });
-//   }
-
-//   return {
-//     type: 'message',
-//     attachments: [
-//       {
-//         contentType: 'application/vnd.microsoft.card.adaptive',
-//         contentUrl: null,
-//         content: {
-//           '$schema': 'http://adaptivecards.io/schemas/adaptive-card.json',
-//           type: 'AdaptiveCard',
-//           version: '1.4',
-//           body: [
-//             {
-//               type: 'TextBlock',
-//               text: '新しい案件が登録されました',
-//               weight: 'Bolder',
-//               size: 'Medium',
-//               wrap: true
-//             },
-//             {
-//               type: 'FactSet',
-//               facts: facts
-//             },
-//             {
-//               type: 'TextBlock',
-//               text: 'エントリー条件',
-//               weight: 'Bolder',
-//               wrap: true,
-//               spacing: 'Medium'
-//             },
-//             {
-//               type: 'TextBlock',
-//               text: entryConditions || '-',
-//               wrap: true
-//             },
-//             {
-//               type: 'TextBlock',
-//               text: 'お問い合わせ時の内容',
-//               weight: 'Bolder',
-//               wrap: true,
-//               spacing: 'Medium'
-//             },
-//             {
-//               type: 'TextBlock',
-//               text: inquiryContent || '-',
-//               wrap: true
-//             },
-//             {
-//               type: 'TextBlock',
-//               text: '発注ナビ担当者のヒアリング内容',
-//               weight: 'Bolder',
-//               wrap: true,
-//               spacing: 'Medium'
-//             },
-//             {
-//               type: 'TextBlock',
-//               text: hearingContent || '-',
-//               wrap: true
-//             }
-//           ]
-//         }
-//       }
-//     ]
-//   };
-// }
 
 function extractOpenAIOutputText(data) {
   if (data.output_text) {
